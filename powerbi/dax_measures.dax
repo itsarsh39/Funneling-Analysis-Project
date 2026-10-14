@@ -1,0 +1,324 @@
+// ==============================================================================
+// POWER BI DAX MEASURES LIBRARY
+// Project: E-Commerce Funnel A/B Testing & Experimentation Case Study
+// Usage: Create an empty table named '_Measures' in Power BI Desktop and 
+//        paste these measure definitions.
+// ==============================================================================
+
+// ------------------------------------------------------------------------------
+// 1. VOLUME & FUNNEL STAGE BASE COUNTS
+// ------------------------------------------------------------------------------
+
+Total Visitors = 
+DISTINCTCOUNT(dim_users[user_id])
+
+Stage 1 Visit Users = 
+CALCULATE(
+    DISTINCTCOUNT(fct_events[user_id]),
+    dim_funnel_stages[stage_name] = "visit"
+)
+
+Stage 2 Product View Users = 
+CALCULATE(
+    DISTINCTCOUNT(fct_events[user_id]),
+    dim_funnel_stages[stage_name] = "product_view"
+)
+
+Stage 3 Add to Cart Users = 
+CALCULATE(
+    DISTINCTCOUNT(fct_events[user_id]),
+    dim_funnel_stages[stage_name] = "add_to_cart"
+)
+
+Stage 4 Checkout Users = 
+CALCULATE(
+    DISTINCTCOUNT(fct_events[user_id]),
+    dim_funnel_stages[stage_name] = "checkout"
+)
+
+Stage 5 Payment Users = 
+CALCULATE(
+    DISTINCTCOUNT(fct_events[user_id]),
+    dim_funnel_stages[stage_name] = "payment"
+)
+
+Stage 6 Purchase Users = 
+CALCULATE(
+    DISTINCTCOUNT(fct_events[user_id]),
+    dim_funnel_stages[stage_name] = "purchase"
+)
+
+// ------------------------------------------------------------------------------
+// 2. STEP-TO-STEP CONVERSION & DROP-OFF RATES
+// ------------------------------------------------------------------------------
+
+Conv Visit to View % = 
+DIVIDE([Stage 2 Product View Users], [Stage 1 Visit Users], 0)
+
+Conv View to Cart % = 
+DIVIDE([Stage 3 Add to Cart Users], [Stage 2 Product View Users], 0)
+
+Conv Cart to Checkout % = 
+DIVIDE([Stage 4 Checkout Users], [Stage 3 Add to Cart Users], 0)
+
+Conv Checkout to Payment % = 
+DIVIDE([Stage 5 Payment Users], [Stage 4 Checkout Users], 0)
+
+Conv Payment to Purchase % = 
+DIVIDE([Stage 6 Purchase Users], [Stage 5 Payment Users], 0)
+
+// Primary Metric: Checkout -> Purchase conversion
+Checkout to Purchase Conv % = 
+DIVIDE([Stage 6 Purchase Users], [Stage 4 Checkout Users], 0)
+
+// ------------------------------------------------------------------------------
+// 3. A/B TEST METRICS & HYPOTHESIS TESTING (TWO-PROP Z-TEST)
+// ------------------------------------------------------------------------------
+
+Control Checkout Users = 
+CALCULATE(
+    [Stage 4 Checkout Users],
+    dim_users[variant] = "control"
+)
+
+Control Purchasers = 
+CALCULATE(
+    [Stage 6 Purchase Users],
+    dim_users[variant] = "control"
+)
+
+Control Conversion Rate = 
+DIVIDE([Control Purchasers], [Control Checkout Users], 0)
+
+Treatment Checkout Users = 
+CALCULATE(
+    [Stage 4 Checkout Users],
+    dim_users[variant] = "treatment"
+)
+
+Treatment Purchasers = 
+CALCULATE(
+    [Stage 6 Purchase Users],
+    dim_users[variant] = "treatment"
+)
+
+Treatment Conversion Rate = 
+DIVIDE([Treatment Purchasers], [Treatment Checkout Users], 0)
+
+// Absolute Difference in percentage points
+Absolute Lift (pts) = 
+[Treatment Conversion Rate] - [Control Conversion Rate]
+
+// Relative Lift Percentage
+Relative Lift % = 
+DIVIDE([Absolute Lift (pts)], [Control Conversion Rate], 0)
+
+// Pooled Conversion Rate
+Pooled Conversion Rate = 
+DIVIDE(
+    [Control Purchasers] + [Treatment Purchasers],
+    [Control Checkout Users] + [Treatment Checkout Users],
+    0
+)
+
+// Pooled Standard Error
+Pooled Standard Error = 
+VAR P_pool = [Pooled Conversion Rate]
+VAR N_ctrl = [Control Checkout Users]
+VAR N_trt = [Treatment Checkout Users]
+RETURN
+IF(
+    N_ctrl > 0 && N_trt > 0 && P_pool > 0 && P_pool < 1,
+    SQRT(P_pool * (1 - P_pool) * ((1 / N_ctrl) + (1 / N_trt))),
+    BLANK()
+)
+
+// Unpooled Standard Error for Confidence Intervals
+Unpooled Standard Error = 
+VAR P_c = [Control Conversion Rate]
+VAR N_c = [Control Checkout Users]
+VAR P_t = [Treatment Conversion Rate]
+VAR N_t = [Treatment Checkout Users]
+RETURN
+IF(
+    N_c > 0 && N_t > 0,
+    SQRT((P_c * (1 - P_c) / N_c) + (P_t * (1 - P_t) / N_t)),
+    BLANK()
+)
+
+// Z-Statistic
+Z Statistic = 
+DIVIDE([Absolute Lift (pts)], [Pooled Standard Error], 0)
+
+// 95% Confidence Interval Margin of Error (Z_alpha/2 = 1.95996)
+Margin of Error 95% = 
+1.95996 * [Unpooled Standard Error]
+
+// 95% Confidence Interval Lower Bound (pts)
+CI Lower 95% (pts) = 
+[Absolute Lift (pts)] - [Margin of Error 95%]
+
+// 95% Confidence Interval Upper Bound (pts)
+CI Upper 95% (pts) = 
+[Absolute Lift (pts)] + [Margin of Error 95%]
+
+// Formatted Confidence Interval String
+CI 95% Display = 
+"[" & FORMAT([CI Lower 95% (pts)] * 100, "+0.00") & " pts, " & FORMAT([CI Upper 95% (pts)] * 100, "+0.00") & " pts]"
+
+// Hypothesis Decision Flag
+Statistical Significance Flag = 
+IF(
+    ABS([Z Statistic]) >= 1.96,
+    "Significant (p < 0.05)",
+    "Not Significant"
+)
+
+// ------------------------------------------------------------------------------
+// 4. SAMPLE RATIO MISMATCH (SRM) GUARDRAILS
+// ------------------------------------------------------------------------------
+
+Control Visitors = 
+CALCULATE(
+    [Total Visitors],
+    dim_users[variant] = "control"
+)
+
+Treatment Visitors = 
+CALCULATE(
+    [Total Visitors],
+    dim_users[variant] = "treatment"
+)
+
+Observed Control Ratio = 
+DIVIDE([Control Visitors], [Total Visitors], 0)
+
+Observed Treatment Ratio = 
+DIVIDE([Treatment Visitors], [Total Visitors], 0)
+
+Expected Allocation Ratio = 
+0.5000
+
+Expected Users Per Variant = 
+[Total Visitors] * [Expected Allocation Ratio]
+
+Chi Square Component Control = 
+VAR E = [Expected Users Per Variant]
+VAR O = [Control Visitors]
+RETURN
+IF(E > 0, ((O - E) ^ 2) / E, 0)
+
+Chi Square Component Treatment = 
+VAR E = [Expected Users Per Variant]
+VAR O = [Treatment Visitors]
+RETURN
+IF(E > 0, ((O - E) ^ 2) / E, 0)
+
+Total SRM Chi Square = 
+[Chi Square Component Control] + [Chi Square Component Treatment]
+
+// SRM Health Status Badge
+SRM Status Badge = 
+SWITCH(
+    TRUE(),
+    [Total SRM Chi Square] >= 10.828, "CRITICAL ALERT: SRM Severe (p < 0.001)",
+    [Total SRM Chi Square] >= 6.635,  "WARNING: SRM Detected (p < 0.01)",
+    "PASSED: Traffic Ratio Balanced"
+)
+
+// ------------------------------------------------------------------------------
+// 5. TEMPORAL NOVELTY TRACKING
+// ------------------------------------------------------------------------------
+
+Early Window Lift (Days 1-3) = 
+VAR Ctrl_Early = 
+    CALCULATE(
+        [Checkout to Purchase Conv %],
+        dim_users[variant] = "control",
+        dim_date[experiment_day] <= 3
+    )
+VAR Trt_Early = 
+    CALCULATE(
+        [Checkout to Purchase Conv %],
+        dim_users[variant] = "treatment",
+        dim_date[experiment_day] <= 3
+    )
+RETURN
+Trt_Early - Ctrl_Early
+
+Stabilized Window Lift (Days 4-14) = 
+VAR Ctrl_Late = 
+    CALCULATE(
+        [Checkout to Purchase Conv %],
+        dim_users[variant] = "control",
+        dim_date[experiment_day] > 3
+    )
+VAR Trt_Late = 
+    CALCULATE(
+        [Checkout to Purchase Conv %],
+        dim_users[variant] = "treatment",
+        dim_date[experiment_day] > 3
+    )
+RETURN
+Trt_Late - Ctrl_Late
+
+Novelty Decay (pts) = 
+[Early Window Lift (Days 1-3)] - [Stabilized Window Lift (Days 4-14)]
+
+// ------------------------------------------------------------------------------
+// 6. REVENUE & FINANCIAL IMPACT (fct_orders)
+// ------------------------------------------------------------------------------
+
+Total Orders = 
+DISTINCTCOUNT(fct_orders[order_id])
+
+Total Gross Revenue = 
+SUM(fct_orders[revenue_usd])
+
+Control Revenue = 
+CALCULATE(
+    [Total Gross Revenue],
+    dim_users[variant] = "control"
+)
+
+Treatment Revenue = 
+CALCULATE(
+    [Total Gross Revenue],
+    dim_users[variant] = "treatment"
+)
+
+Incremental Revenue = 
+[Treatment Revenue] - [Control Revenue]
+
+Average Order Value (AOV) = 
+DIVIDE([Total Gross Revenue], [Total Orders], 0)
+
+Control AOV = 
+CALCULATE([Average Order Value (AOV)], dim_users[variant] = "control")
+
+Treatment AOV = 
+CALCULATE([Average Order Value (AOV)], dim_users[variant] = "treatment")
+
+Revenue Per User (ARPU) = 
+DIVIDE([Total Gross Revenue], [Total Visitors], 0)
+
+// Annualized Forecast based on conservative stabilized baseline (+2.19 pts)
+Annualized GMV Lift Projected = 
+VAR DaysCount = DISTINCTCOUNT(dim_date[experiment_day])
+VAR ActualIncremental = [Incremental Revenue]
+VAR NoveltyAdjustmentFactor = DIVIDE([Stabilized Window Lift (Days 4-14)], [Absolute Lift (pts)], 1)
+RETURN
+IF(
+    DaysCount > 0,
+    (ActualIncremental * (365 / DaysCount)) * NoveltyAdjustmentFactor,
+    BLANK()
+)
+
+// ------------------------------------------------------------------------------
+// 7. EXECUTIVE RECOMMENDATION CARD
+// ------------------------------------------------------------------------------
+
+Executive Recommendation Banner = 
+"RECOMMENDATION: SHIP WITH CAVEAT | Lift: " & 
+FORMAT([Absolute Lift (pts)] * 100, "+0.00") & " pts (" & [Statistical Significance Flag] & ") | " &
+[SRM Status Badge] & " | Use Stabilized Lift (" & FORMAT([Stabilized Window Lift (Days 4-14)] * 100, "+0.00") & " pts) for ARR Forecasting"
