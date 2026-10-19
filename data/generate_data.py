@@ -315,6 +315,14 @@ def generate_experiment_dataset(total_users=TOTAL_USERS):
 
 
 def save_dataset_and_schema(tables, output_dir="data"):
+    if not os.path.isabs(output_dir):
+        # Anchor relative output_dir to repo root
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        output_dir = os.path.join(base_dir, output_dir)
+
+    if isinstance(tables, pd.DataFrame):
+        tables = {'events': tables}
+
     os.makedirs(output_dir, exist_ok=True)
     db_path = os.path.join(output_dir, "events.db")
 
@@ -357,6 +365,11 @@ def save_dataset_and_schema(tables, output_dir="data"):
         csv_file = os.path.join(output_dir, f"{table_name}.csv")
         df.to_csv(csv_file, index=False)
     print("Database persistence and CSV exports completed successfully.")
+
+
+# Backward compatibility aliases for Streamlit and external callers
+generate_experiment_data = generate_experiment_dataset
+save_data = save_dataset_and_schema
 
 
 def print_enhanced_sanity_checks(tables):

@@ -4,6 +4,24 @@ Funnel A/B Test Case Study: Experimentation Rigor, SRM Detection, and Decision F
 Deployable locally and on Streamlit Community Cloud.
 """
 
+from pathlib import Path
+import sys
+
+# -----------------------------------------------------------------------------
+# Setup sys.path using pathlib: app dir, repo root, and src/ (if it exists)
+# -----------------------------------------------------------------------------
+APP_DIR = Path(__file__).resolve().parent
+REPO_ROOT = APP_DIR.parent
+SRC_DIR = REPO_ROOT / "src"
+DATA_DIR = REPO_ROOT / "data"
+ANALYSIS_DIR = REPO_ROOT / "analysis"
+
+for _dir in [APP_DIR, REPO_ROOT, SRC_DIR, DATA_DIR, ANALYSIS_DIR]:
+    if _dir.exists():
+        _dir_str = str(_dir)
+        if _dir_str not in sys.path:
+            sys.path.insert(0, _dir_str)
+
 import os
 import json
 import sqlite3
@@ -13,6 +31,20 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 from scipy import stats
+
+# Top-level imports for data generation & analysis (fail early if missing)
+try:
+    from generate_data import generate_experiment_data, save_data
+except ImportError:
+    try:
+        from data.generate_data import generate_experiment_data, save_data
+    except ImportError:
+        from src.generate_data import generate_experiment_data, save_data
+
+try:
+    from run_experiment_analysis import run_full_analysis
+except ImportError:
+    from analysis.run_experiment_analysis import run_full_analysis
 
 # -----------------------------------------------------------------------------
 # 1. Page Configuration & Custom Styling
@@ -93,17 +125,11 @@ def load_or_generate_experiment_data():
 
     # If results or db not present, run generation & analysis
     if not os.path.exists(results_path) or not os.path.exists(db_path):
-        import sys
-        sys.path.append(os.path.join(base_dir, "data"))
-        sys.path.append(os.path.join(base_dir, "analysis"))
-        from generate_data import generate_experiment_data, save_data
-        from run_experiment_analysis import run_full_analysis
-        
         df = generate_experiment_data()
         save_data(df, output_dir=os.path.join(base_dir, "data"))
         run_full_analysis(db_path=db_path, output_json=results_path)
 
-    with open(results_path, 'r') as f:
+    with open(results_path, 'r', encoding='utf-8') as f:
         results = json.load(f)
 
     # Load daily aggregation from db
@@ -567,7 +593,7 @@ with tab_sql:
     selected_query = st.radio("Select SQL Script to Inspect:", list(sql_files.keys()), horizontal=True)
 
     if os.path.exists(sql_files[selected_query]):
-        with open(sql_files[selected_query], 'r') as f:
+        with open(sql_files[selected_query], 'r', encoding='utf-8') as f:
             query_code = f.read()
         st.code(query_code, language="sql")
     else:

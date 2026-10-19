@@ -5,10 +5,17 @@ Outputs structured JSON and console report.
 """
 
 import os
+import sys
 import json
 import sqlite3
 import pandas as pd
 import numpy as np
+
+# Ensure analysis directory is in sys.path
+ANALYSIS_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(ANALYSIS_DIR)
+if ANALYSIS_DIR not in sys.path:
+    sys.path.insert(0, ANALYSIS_DIR)
 
 from power_analysis import calculate_required_sample_size, calculate_achieved_power, format_power_summary
 from hypothesis_testing import (
@@ -21,11 +28,18 @@ from recommendation import generate_experiment_recommendation, format_recommenda
 
 
 def load_sql_query(query_path):
-    with open(query_path, 'r') as f:
+    if not os.path.isabs(query_path):
+        query_path = os.path.join(REPO_ROOT, query_path)
+    with open(query_path, 'r', encoding='utf-8') as f:
         return f.read()
 
 
 def run_full_analysis(db_path="data/events.db", output_json="analysis/results.json"):
+    if not os.path.isabs(db_path):
+        db_path = os.path.join(REPO_ROOT, db_path)
+    if not os.path.isabs(output_json):
+        output_json = os.path.join(REPO_ROOT, output_json)
+
     if not os.path.exists(db_path):
         raise FileNotFoundError(f"Database not found at {db_path}. Please run data/generate_data.py first.")
 
