@@ -15,3 +15,8 @@ Thumbs.db
 # Databases
 *.sqlite3
 *.db
+
+# Temporary & export files
+*.zip
+data/files*/
+

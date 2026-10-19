@@ -1,0 +1,7 @@
+stage_order,stage_name,stage_category,is_conversion_step
+1,visit,Top of Funnel,0
+2,product_view,Top of Funnel,0
+3,add_to_cart,Middle of Funnel,0
+4,checkout,Middle of Funnel,0
+5,payment,Bottom of Funnel,0
+6,purchase,Bottom of Funnel,1
